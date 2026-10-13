@@ -1,0 +1,63 @@
+{
+  "id": 1,
+  "name": "GORILLA START",
+  "laps": 1,
+  "length": 15000,
+  "terrain": "FLAT",
+  "objects": [
+    {
+      "type": "RAMP",
+      "x": 900,
+      "width": 180,
+      "height": 80
+    },
+    {
+      "type": "RAMP",
+      "x": 1750,
+      "width": 210,
+      "height": 100
+    },
+    {
+      "type": "RAMP",
+      "x": 2850,
+      "width": 230,
+      "height": 130
+    },
+    {
+      "type": "RAMP",
+      "x": 4150,
+      "width": 300,
+      "height": 170
+    },
+    {
+      "type": "MEGA_RAMP",
+      "x": 5600,
+      "width": 360,
+      "height": 220
+    },
+    {
+      "type": "RAMP",
+      "x": 7600,
+      "width": 220,
+      "height": 110
+    },
+    {
+      "type": "RAMP",
+      "x": 9300,
+      "width": 280,
+      "height": 150
+    },
+    {
+      "type": "MEGA_RAMP",
+      "x": 11200,
+      "width": 360,
+      "height": 220
+    },
+    {
+      "type": "RAMP",
+      "x": 13200,
+      "width": 250,
+      "height": 130
+    }
+  ]
+}
