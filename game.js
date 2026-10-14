@@ -24,12 +24,12 @@ const TAU = Math.PI * 2;
 
 const CONFIG = {
   gravity: 1450,
-  maxSpeed: 420,
-  turboMaxSpeed: 600,
-  acceleration: 240,
-  brakeAcceleration: 360,
+  maxSpeed: 840,
+  turboMaxSpeed: 1000,
+  acceleration: 980,
+  brakeAcceleration: 420,
   friction: 80,
-  airRotationAcceleration: 8,
+  airRotationAcceleration: 9,
   maxAngularVelocity: 5,
   angularDamping: 0.94,
   laneSpeed: 280,
@@ -202,7 +202,6 @@ function startRace() {
 function updatePlayer(dt) {
   const acc=input.held("accelerate");
   const brake=input.held("brake");
-  const nose=input.held("nose");
   const left=input.held("left");
   const right=input.held("right");
 
@@ -212,56 +211,56 @@ function updatePlayer(dt) {
   if (player.grounded) {
     if (acc) player.vx += CONFIG.acceleration*dt;
     else player.vx -= CONFIG.friction*dt;
-
     if (brake) player.vx -= CONFIG.brakeAcceleration*dt;
     player.vx=Math.max(0,Math.min(CONFIG.maxSpeed,player.vx));
 
-    const ground=supportPoint();
-    player.y=ground.y-CONFIG.wheelRadius;
-    player.rotation=ground.angle;
+    const rearX=player.x;
+    const frontX=player.x+CONFIG.bikeLength;
+    const rearY=terrainY(rearX);
+    const frontY=terrainY(frontX);
+    const groundAngle=Math.atan2(frontY-rearY,CONFIG.bikeLength);
+    player.y=Math.max(rearY,frontY)-CONFIG.wheelRadius;
+    player.rotation=groundAngle;
 
-    // A small front-wheel lift when the rider is moving quickly.
-    player.wheelie = (right || left) && player.vx > 160;
-    if (player.wheelie) {
-      player.rotation += (right ? -0.22 : 0.22);
+    player.wheelie=left && player.vx>120;
+    if(player.wheelie){
+      const target=-0.62;
+      player.rotation += (target-player.rotation)*Math.min(1,dt*14);
+      player.y -= 28;
     }
 
-    const r=rampAt(player.x+CONFIG.bikeLength*0.55);
-    if (r && player.x+CONFIG.bikeLength*0.55 >= r.x+r.w*0.60) {
-      const launch= r.mega ? CONFIG.megaJumpVelocity : CONFIG.jumpVelocity;
-      player.vy=launch;
+    const r=rampAt(frontX);
+    if(r && frontX>=r.x+r.w-6){
+      const angle=slopeAngle(frontX);
+      const launchSpeed=Math.max(player.vx,560);
+      const jumpBoost=r.mega ? 520 : 390;
       player.grounded=false;
       player.jumpState=r.mega ? "mega" : "jump";
       player.airTime=0;
-      // launch angle follows ramp, but remains controllable in air
-      player.rotation=ground.angle;
+      player.vx=Math.cos(angle)*launchSpeed;
+      player.vy=Math.sin(angle)*launchSpeed-jumpBoost;
+      player.rotation=angle;
+      player.angularVelocity=0;
+      player.y=terrainY(frontX)-CONFIG.wheelRadius-2;
     }
   } else {
-    // air
-    player.airTime += dt;
+    // Air controls affect trajectory directly: LEFT=higher, RIGHT=farther.
+    if(left){ player.vy -= 1250*dt; player.angularVelocity -= 1.6*dt; }
+    if(right){ player.vx += 560*dt; player.angularVelocity += 0.9*dt; }
+    if(acc) player.vx += 90*dt;
+    player.vx=Math.max(80,Math.min(CONFIG.maxSpeed+180,player.vx));
     player.vy += CONFIG.gravity*dt;
     player.y += player.vy*dt;
-
-    let rotInput=0;
-    if (left) rotInput -= 1;
-    if (right || nose) rotInput += 1;
-    player.angularVelocity += rotInput*CONFIG.airRotationAcceleration*dt;
-    player.angularVelocity *= Math.pow(CONFIG.angularDamping, dt*60);
-    player.angularVelocity=Math.max(-CONFIG.maxAngularVelocity,
-                                   Math.min(CONFIG.maxAngularVelocity,player.angularVelocity));
+    player.angularVelocity=Math.max(-CONFIG.maxAngularVelocity,Math.min(CONFIG.maxAngularVelocity,player.angularVelocity));
+    player.angularVelocity*=Math.pow(CONFIG.angularDamping,dt*60);
     player.rotation += player.angularVelocity*dt;
-
-    // Horizontal control is intentionally modest in air.
-    if (acc) player.vx += 70*dt;
-    player.vx=Math.max(80,Math.min(CONFIG.maxSpeed,player.vx));
-
     const support=supportPoint();
     const wheelBottom=player.y+CONFIG.wheelRadius;
-
-    if (wheelBottom >= support.y && player.vy > 0) {
+    if(wheelBottom>=support.y && player.vy>0){
       player.y=support.y-CONFIG.wheelRadius;
       land(support.angle);
     }
+  }
   }
 
   player.x += player.vx*dt;
@@ -275,7 +274,7 @@ function supportPoint() {
   const rearY=terrainY(rearX);
   const frontY=terrainY(frontX);
   const angle=Math.atan2(frontY-rearY, CONFIG.bikeLength);
-  return {y:Math.min(rearY,frontY), angle};
+  return {y:Math.max(rearY,frontY), angle};
 }
 
 function land(groundAngle) {
@@ -428,37 +427,76 @@ function drawWorld() {
   }
 
   // Mega apartment landmark behind the largest ramp
-  const ax=5480-state.cameraX*0.55;
-  if(ax>-300 && ax<W+300) drawApartment(ax,350-state.cameraY*0.55);
+  const ax=5450-state.cameraX;
+  if(ax>-360 && ax<W+360) drawApartment(ax,terrainY(5450)-185-state.cameraY);
 }
 
 function drawApartment(x,y) {
-  // Original shabby Showa apartment, background scale.
-  ctx.fillStyle="#7e6c5b"; ctx.fillRect(x,y,250,170);
-  ctx.fillStyle="#b69a75"; ctx.fillRect(x+12,y+12,226,146);
-  ctx.fillStyle="#5b554b"; ctx.fillRect(x+20,y+24,210,12);
-  ctx.fillStyle="#413e39";
+  ctx.save();
+
+  // Very shabby Showa-era apartment, deliberately placed as a jump-over obstacle.
+  ctx.fillStyle="#3a332d";
+  ctx.fillRect(x+8,y+158,270,18);
+
+  ctx.fillStyle="#665a4d";
+  ctx.fillRect(x,y,270,165);
+  ctx.fillStyle="#87735f";
+  ctx.fillRect(x+8,y+8,254,149);
+
+  // Weathered patches
+  ctx.fillStyle="#6b5c4d";
+  ctx.fillRect(x+18,y+18,35,22);
+  ctx.fillRect(x+185,y+12,48,18);
+  ctx.fillRect(x+95,y+96,45,25);
+  ctx.fillStyle="#9a8268";
+  ctx.fillRect(x+62,y+42,22,35);
+  ctx.fillRect(x+212,y+72,28,28);
+
+  // Old windows
   for(let row=0;row<3;row++){
     for(let col=0;col<5;col++){
-      ctx.fillRect(x+28+col*40,y+50+row*34,24,20);
-      ctx.fillStyle="#d8c87a";
-      if((row+col)%3===0) ctx.fillRect(x+32+col*40,y+54+row*34,16,12);
-      ctx.fillStyle="#413e39";
+      const wx=x+20+col*47, wy=y+32+row*38;
+      ctx.fillStyle="#393633";
+      ctx.fillRect(wx,wy,30,24);
+      ctx.fillStyle=(row+col)%3===0 ? "#d7b75e" : "#56606a";
+      ctx.fillRect(wx+4,wy+4,22,16);
+      ctx.fillStyle="#665a4d";
+      ctx.fillRect(wx+14,wy,3,24);
     }
   }
-  ctx.fillStyle="#6b5b4c";
-  ctx.fillRect(x+100,y+125,50,33);
-  // rooftop water tank / antenna
-  ctx.fillStyle="#4f5148"; ctx.fillRect(x+180,y-25,35,25);
-  ctx.fillRect(x+196,y-50,4,25);
-  ctx.fillRect(x+184,y-48,30,3);
-  // laundry
-  ctx.fillStyle="#f3eee0";
-  ctx.fillRect(x+12,y+100,32,5);
-  ctx.fillStyle="#d84f4f"; ctx.fillRect(x+48,y+101,28,5);
-  ctx.fillStyle="#4f86b7"; ctx.fillRect(x+80,y+99,25,6);
-}
 
+  // Rusty balconies
+  ctx.fillStyle="#383632";
+  for(let row=0;row<3;row++){
+    const by=y+60+row*38;
+    ctx.fillRect(x+4,by,262,5);
+    for(let bx=x+10;bx<x+262;bx+=18) ctx.fillRect(bx,by,3,20);
+  }
+
+  // Pipes
+  ctx.fillStyle="#4a4741";
+  ctx.fillRect(x+245,y+8,8,150);
+  ctx.fillRect(x+252,y+40,17,6);
+  ctx.fillRect(x+252,y+104,17,6);
+
+  // Roof, tank and antenna
+  ctx.fillStyle="#4b4842";
+  ctx.fillRect(x-6,y-8,282,12);
+  ctx.fillStyle="#3d403d";
+  ctx.fillRect(x+205,y-32,38,24);
+  ctx.fillRect(x+221,y-54,5,22);
+  ctx.fillRect(x+208,y-52,34,3);
+
+  // Laundry
+  ctx.fillStyle="#e7e1cf";
+  ctx.fillRect(x+28,y+112,34,6);
+  ctx.fillStyle="#d04d4d";
+  ctx.fillRect(x+69,y+114,28,6);
+  ctx.fillStyle="#4d7ea8";
+  ctx.fillRect(x+106,y+111,31,6);
+
+  ctx.restore();
+}
 function drawPlayer() {
   const sx=player.x-state.cameraX;
   const sy=player.y-state.cameraY;
@@ -475,91 +513,79 @@ function drawPlayer() {
 }
 
 function drawBike() {
-  // rear/front wheel
   const rear=0, front=CONFIG.bikeLength;
-  for(const wx of [rear,front]){
-    ctx.fillStyle="#171717";
-    ctx.beginPath(); ctx.arc(wx,0,CONFIG.wheelRadius,0,TAU); ctx.fill();
-    ctx.fillStyle="#aaa";
-    ctx.fillRect(wx-2,-12,4,24);
-    ctx.fillRect(wx-12,-2,24,4);
-    ctx.fillStyle="#333"; ctx.beginPath(); ctx.arc(wx,0,5,0,TAU); ctx.fill();
+  function wheel(x){
+    ctx.fillStyle="#141414"; ctx.beginPath(); ctx.arc(x,0,21,0,TAU); ctx.fill();
+    ctx.fillStyle="#292929";
+    for(let i=0;i<12;i++){const a=i*Math.PI/6;ctx.fillRect(Math.round(x+Math.cos(a)*18-2),Math.round(Math.sin(a)*18-2),5,5);}
+    ctx.fillStyle="#aaa"; ctx.beginPath(); ctx.arc(x,0,8,0,TAU); ctx.fill();
+    ctx.fillStyle="#555"; ctx.beginPath(); ctx.arc(x,0,3,0,TAU); ctx.fill();
+    ctx.strokeStyle="#777"; ctx.lineWidth=2;
+    for(let i=0;i<8;i++){const a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+Math.cos(a)*7,Math.sin(a)*7);ctx.stroke();}
   }
-
-  // frame
-  ctx.fillStyle="#d83c32";
-  poly([[10,-8],[42,-32],[78,-18],[101,-5],[72,0],[42,0]]);
-  ctx.fillStyle="#f2c43d";
-  ctx.fillRect(48,-31,28,7);
-  ctx.fillStyle="#252525";
-  ctx.fillRect(72,-38,38,6); // handlebar
-  ctx.fillRect(88,-36,5,14);
-  ctx.fillStyle="#1d1d1d";
-  ctx.fillRect(31,-37,38,7); // seat
-  ctx.fillStyle="#bbb";
-  ctx.fillRect(99,-5,5,18); // front fork
-  ctx.fillRect(103,-6,4,20);
+  wheel(rear); wheel(front);
+  ctx.strokeStyle="#333"; ctx.lineWidth=8; ctx.beginPath();ctx.moveTo(12,-5);ctx.lineTo(54,-31);ctx.lineTo(96,-13);ctx.lineTo(118,-2);ctx.stroke();
+  ctx.strokeStyle="#777";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(15,-5);ctx.lineTo(55,-28);ctx.lineTo(95,-11);ctx.lineTo(116,-2);ctx.stroke();
+  ctx.fillStyle="#555";ctx.fillRect(48,-19,33,29);ctx.fillStyle="#8a8a8a";ctx.fillRect(54,-14,22,20);ctx.fillStyle="#333";for(let i=0;i<4;i++)ctx.fillRect(57+i*4,-11,2,15);
+  ctx.fillStyle="#b43b32";ctx.beginPath();ctx.moveTo(49,-35);ctx.lineTo(82,-35);ctx.lineTo(91,-18);ctx.lineTo(56,-18);ctx.closePath();ctx.fill();
+  ctx.fillStyle="#202020";ctx.fillRect(75,-44,33,9);ctx.fillRect(82,-48,22,5);
+  ctx.strokeStyle="#d1a04a";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(38,-3);ctx.lineTo(56,-29);ctx.stroke();
+  ctx.strokeStyle="#c8c8c8";ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(97,-4);ctx.lineTo(117,-43);ctx.stroke();ctx.strokeStyle="#666";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(103,-4);ctx.lineTo(120,-43);ctx.stroke();
+  ctx.strokeStyle="#333";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(112,-43);ctx.lineTo(122,-51);ctx.lineTo(130,-49);ctx.stroke();
+  ctx.fillStyle="#eee";ctx.beginPath();ctx.moveTo(112,-48);ctx.lineTo(127,-46);ctx.lineTo(124,-31);ctx.lineTo(113,-34);ctx.closePath();ctx.fill();
+  ctx.strokeStyle="#777";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(69,4);ctx.lineTo(94,8);ctx.lineTo(112,5);ctx.stroke();ctx.fillStyle="#999";ctx.fillRect(109,1,18,8);
+  ctx.fillStyle="#b43b32";ctx.beginPath();ctx.moveTo(-1,-8);ctx.quadraticCurveTo(17,-29,38,-16);ctx.lineTo(34,-10);ctx.quadraticCurveTo(17,-21,4,-3);ctx.closePath();ctx.fill();
+  ctx.fillStyle="#555";ctx.fillRect(49,0,15,4);
 }
-
 function drawGorilla() {
-  // Comical muscular gorilla: deliberately original pixel-art construction.
-  const bob = player.grounded ? Math.sin(state.time*10)*1.5 : -2;
-  ctx.translate(55,-58+bob);
+  const bob=player.grounded ? Math.sin(state.time*10)*1.2 : -2;
+  ctx.translate(55,-60+bob);
 
-  // legs
-  ctx.fillStyle="#4b3024";
-  ctx.fillRect(-8,28,18,25);
-  ctx.fillRect(18,28,18,25);
-  ctx.fillStyle="#252525";
-  ctx.fillRect(-12,50,25,7);
-  ctx.fillRect(14,50,25,7);
+  // Massive gorilla body.
+  ctx.fillStyle="#3a241d";
+  ctx.fillRect(-12,30,22,27); ctx.fillRect(22,30,22,27);
+  ctx.fillStyle="#181818";
+  ctx.fillRect(-17,53,29,8); ctx.fillRect(18,53,30,8);
 
-  // huge torso
-  ctx.fillStyle="#4b3024";
-  ctx.fillRect(-18,-8,70,48);
-  ctx.fillRect(-28,2,18,34);
-  ctx.fillRect(48,2,18,34);
-  // chest highlights
-  ctx.fillStyle="#694433";
-  ctx.fillRect(-7,-1,24,16);
-  ctx.fillRect(21,-1,24,16);
+  ctx.fillStyle="#45291f";
+  ctx.fillRect(-25,-10,80,53);
+  ctx.fillRect(-37,-2,21,39); ctx.fillRect(50,-2,21,39);
+  ctx.fillStyle="#714534";
+  ctx.fillRect(-31,-7,88,29);
+  ctx.fillRect(-9,-4,30,20); ctx.fillRect(22,-4,30,20);
 
-  // arms
-  ctx.fillStyle="#3d281f";
-  ctx.fillRect(-34,4,14,42);
-  ctx.fillRect(58,4,14,42);
-  ctx.fillRect(-38,40,20,10);
-  ctx.fillRect(56,40,20,10);
+  // Thick arms.
+  ctx.fillStyle="#3b241c";
+  ctx.fillRect(-45,7,18,42); ctx.fillRect(54,7,18,42);
+  ctx.fillRect(-49,39,24,14); ctx.fillRect(52,39,24,14);
 
-  // head
-  ctx.fillStyle="#4b3024";
-  ctx.fillRect(2,-43,44,38);
-  ctx.fillRect(-5,-34,8,18);
-  ctx.fillRect(45,-34,8,18);
+  // Gorilla neck/head: heavy brow, wide muzzle and strong jaw.
+  ctx.fillStyle="#332019"; ctx.fillRect(8,-15,34,18);
+  ctx.fillStyle="#3b241c"; ctx.fillRect(2,-49,45,31);
+  ctx.fillRect(-8,-37,10,17); ctx.fillRect(47,-37,10,17);
 
-  // helmet
-  ctx.fillStyle="#f2c43d";
-  ctx.fillRect(-2,-50,50,10);
-  ctx.fillRect(6,-57,36,9);
-  ctx.fillStyle="#d83c32";
-  ctx.fillRect(20,-55,10,7);
+  ctx.fillStyle="#241713";
+  ctx.fillRect(6,-37,39,10); ctx.fillRect(11,-42,30,7);
 
-  // face
-  ctx.fillStyle="#c18455";
-  ctx.fillRect(12,-34,25,19);
-  ctx.fillStyle="#111";
-  ctx.fillRect(17,-29,4,4);
-  ctx.fillRect(29,-29,4,4);
-  ctx.fillRect(21,-20,14,4);
+  ctx.fillStyle="#0c0a09";
+  ctx.fillRect(13,-34,8,5); ctx.fillRect(31,-34,8,5);
+  ctx.fillStyle="#b18a55";
+  ctx.fillRect(16,-33,3,2); ctx.fillRect(34,-33,3,2);
 
-  // neck
-  ctx.fillStyle="#3d281f"; ctx.fillRect(13,-9,22,10);
+  // Broad protruding muzzle and gorilla nose.
+  ctx.fillStyle="#8a5a3e";
+  ctx.fillRect(8,-27,37,19); ctx.fillRect(13,-22,29,17);
+  ctx.fillStyle="#2a1a15";
+  ctx.fillRect(13,-27,29,9); ctx.fillRect(10,-24,7,6); ctx.fillRect(38,-24,7,6);
+  ctx.fillStyle="#080707";
+  ctx.fillRect(17,-24,6,4); ctx.fillRect(33,-24,6,4);
 
-  // racing number patch
-  ctx.fillStyle="#f2f2e9"; ctx.fillRect(20,4,20,18);
-  ctx.fillStyle="#111"; ctx.font="bold 13px monospace"; ctx.fillText("1",27,18);
+  ctx.fillStyle="#6b432f"; ctx.fillRect(12,-10,33,10);
+  ctx.fillStyle="#111"; ctx.fillRect(20,-7,18,4);
+
+  ctx.fillStyle="#f1eee5"; ctx.fillRect(16,5,28,21);
+  ctx.fillStyle="#111"; ctx.font="bold 14px monospace"; ctx.fillText("1",26,20);
 }
-
 function poly(points) {
   ctx.beginPath();
   ctx.moveTo(points[0][0],points[0][1]);
@@ -587,7 +613,7 @@ function drawHud() {
 
   ctx.fillStyle="#fff";
   ctx.font="16px monospace";
-  ctx.fillText("A/ACCEL  ←→ AIR ROTATE  ↓ NOSE  P PAUSE",W-560,H-24);
+  ctx.fillText("A/ACCEL  ←→ AIR ROTATE  (→ = NOSE DOWN)  ← GROUND WHEELIE  P PAUSE",W-610,H-24);
 }
 
 function drawTitle() {
